@@ -1,0 +1,74 @@
+name: "Builds"
+
+on:
+  pull_request: {}
+  push: {}
+
+jobs:
+  build:
+    runs-on: "ubuntu-latest"
+
+    strategy:
+      matrix:
+        ghc: ["8.10.4"] # , "8.8.4"]
+        include:
+          - ghc: "8.10.4"
+            arg: "ghc8104"
+          # - ghc: "8.8.4"
+          #   arg: "ghc884"
+
+    steps:
+      - name: "Checkout this repository."
+        uses: "actions/checkout@v2"
+
+      - name: "Checkout latest haskell-language-server release."
+        uses: "actions/checkout@v2"
+        with:
+          path: "hls"
+          repository: "haskell/haskell-language-server"
+          ref: "1.2.0"
+          submodules: true
+
+      - name: "Install Nix."
+        uses: "cachix/install-nix-action@v13"
+
+      - name: "Set up 'cabal-install'."
+        id: "setup-cabal-install"
+        run: |
+          nix-shell --command 'cd hls && cabal update'
+          echo '::set-output name=cabal-store::$HOME/.cabal/store'
+
+      - name: "Freeze 'cabal-install' dependency solution."
+        run: |
+          # Generate a 'cabal.project.freeze' file scoped to an exact snapshot
+          # of Hackage's index state at some arbitrarily recent point in time.
+          #
+          # TODO: See if it's better to just commit this to the repository and
+          # copy the freeze file into the 'hls' sub-directory on each run.
+          #
+          # This way, it would be trivial to write another Action which could
+          # periodically regenerate the freeze file every so often.
+          nix-shell --command 'cd hls && cabal freeze --index-state "hackage.haskell.org 2021-05-21T05:01:41Z"'
+
+      - name: "Cache build artifacts."
+        uses: "actions/cache@v2"
+        with:
+          path: |
+            ${{ steps.setup-cabal-install.outputs.cabal-store }}
+            ./hls/dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/cabal.project.freeze') }}
+          restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
+
+      - name: "Shorten binary names."
+        run: |
+          cd hls
+          sed -i.bak -e 's/haskell-language-server/hls/g' \
+                     -e 's/haskell_language_server/hls/g' \
+                     haskell-language-server.cabal
+          sed -i.bak -e 's/Paths_haskell_language_server/Paths_hls/g' \
+                     src/**/*.hs exe/*.hs
+          cd ../
+
+      - name: "Build Haskell Language Server."
+        run: |
+          nix-shell --command 'cd hls && cabal build exe:hls -O2 --ghc-options="-dynamic"'

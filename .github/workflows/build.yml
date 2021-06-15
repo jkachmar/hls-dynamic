@@ -10,12 +10,11 @@ jobs:
 
     strategy:
       matrix:
-        ghc: ["8.10.4"] # , "8.8.4"]
-        include:
-          - ghc: "8.10.4"
-            arg: "ghc8104"
-          # - ghc: "8.8.4"
-          #   arg: "ghc884"
+        ghc: ["8.10.4", "8.8.4"]
+        include: [
+          { ghc: "8.10.4", nix_ghc_ver: "ghc8104" },
+          { ghc: "8.8.4", nix_ghc_ver: "ghc884" }
+        ]
 
     steps:
       - name: "Checkout this repository."
@@ -35,7 +34,9 @@ jobs:
       - name: "Set up 'cabal-install'."
         id: "setup-cabal-install"
         run: |
-          nix-shell --command 'cd hls && cabal update'
+          nix-shell \
+            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
+            --command 'cd hls && cabal update'
           echo '::set-output name=cabal-store::$HOME/.cabal/store'
 
       - name: "Freeze 'cabal-install' dependency solution."
@@ -48,16 +49,23 @@ jobs:
           #
           # This way, it would be trivial to write another Action which could
           # periodically regenerate the freeze file every so often.
-          nix-shell --command 'cd hls && cabal freeze --index-state "hackage.haskell.org 2021-05-21T05:01:41Z"'
+          nix-shell \
+            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
+            --command 'cd hls && cabal freeze --index-state "hackage.haskell.org 2021-05-21T05:01:41Z"'
 
-      - name: "Cache build artifacts."
+      - name: "Cache dependency build artifacts."
         uses: "actions/cache@v2"
         with:
           path: |
             ${{ steps.setup-cabal-install.outputs.cabal-store }}
-            ./hls/dist-newstyle
           key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/cabal.project.freeze') }}
           restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
+
+      - name: "Build dependencies."
+        run : |
+          nix-shell \
+            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
+            --command 'cd hls && cabal build --only-dependencies'
 
       - name: "Shorten binary names."
         run: |
@@ -69,6 +77,16 @@ jobs:
                      src/**/*.hs exe/*.hs
           cd ../
 
+      - name: "Cache Haskell Language Server build artifacts."
+        uses: "actions/cache@v2"
+        with:
+          path: |
+            ./hls/dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/haskell-language-server.cabal') }}
+          restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
+
       - name: "Build Haskell Language Server."
         run: |
-          nix-shell --command 'cd hls && cabal build exe:hls -O2 --ghc-options="-dynamic"'
+          nix-shell \
+            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
+            --command 'cd hls && cabal build exe:hls -O2 --ghc-options="-dynamic"'

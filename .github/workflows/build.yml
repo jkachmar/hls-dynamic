@@ -1,8 +1,8 @@
 name: "Builds"
 
 on:
-  pull_request: {}
-  push: {}
+  pull_request: { branches: [ "main" ] }
+  push: { branches: [ "main" ] }
 
 jobs:
   build:
@@ -10,11 +10,8 @@ jobs:
 
     strategy:
       matrix:
-        ghc: ["8.10.4", "8.8.4"]
-        include: [
-          { ghc: "8.10.4", nix_ghc_ver: "ghc8104" },
-          { ghc: "8.8.4", nix_ghc_ver: "ghc884" }
-        ]
+        ghc: [ "8.10.7" ]
+        cabal: [ "latest" ]
 
     steps:
       - name: "Checkout this repository."
@@ -25,19 +22,15 @@ jobs:
         with:
           path: "hls"
           repository: "haskell/haskell-language-server"
-          ref: "1.2.0"
+          ref: "1.4.0"
           submodules: true
 
-      - name: "Install Nix."
-        uses: "cachix/install-nix-action@v13"
-
-      - name: "Set up 'cabal-install'."
-        id: "setup-cabal-install"
-        run: |
-          nix-shell \
-            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
-            --command 'cd hls && cabal update'
-          echo '::set-output name=cabal-store::$HOME/.cabal/store'
+      - name: "Set up Haskell tooling."
+        uses: "haskell/actions/setup@v1"
+        id: "set-up-haskell-tooling"
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ matrix.cabal }}
 
       - name: "Freeze 'cabal-install' dependency solution."
         run: |
@@ -49,23 +42,24 @@ jobs:
           #
           # This way, it would be trivial to write another Action which could
           # periodically regenerate the freeze file every so often.
-          nix-shell \
-            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
-            --command 'cd hls && cabal freeze --index-state "hackage.haskell.org 2021-05-21T05:01:41Z"'
+          cd hls
+          cabal freeze --index-state "hackage.haskell.org 2021-09-13T20:19:59Z"
+          cd ../
 
       - name: "Cache dependency build artifacts."
         uses: "actions/cache@v2"
         with:
           path: |
-            ${{ steps.setup-cabal-install.outputs.cabal-store }}
+            ${{ steps.set-up-haskell-tooling.outputs.cabal-store }}
           key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/cabal.project.freeze') }}
           restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
 
       - name: "Build dependencies."
         run : |
-          nix-shell \
-            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
-            --command 'cd hls && cabal build --only-dependencies'
+          cd hls
+          cabal update
+          cabal build --only-dependencies
+          cd ../
 
       - name: "Shorten binary names."
         run: |
@@ -87,6 +81,5 @@ jobs:
 
       - name: "Build Haskell Language Server."
         run: |
-          nix-shell \
-            --argstr "ghcVer" "${{ matrix.nix_ghc_ver }}" \
-            --command 'cd hls && cabal build exe:hls -O2 --ghc-options="-dynamic"'
+          cd hls
+          cabal build exe:hls -O2 # --ghc-options="-dynamic" # XXX: Unclear whether this is necessary

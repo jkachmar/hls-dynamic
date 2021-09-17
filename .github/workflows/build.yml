@@ -51,6 +51,7 @@ jobs:
         with:
           path: |
             ${{ steps.set-up-haskell-tooling.outputs.cabal-store }}
+            ./hls/dist-newstyle
           key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/cabal.project.freeze') }}
           restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
 
@@ -71,13 +72,13 @@ jobs:
                      src/**/*.hs exe/*.hs
           cd ../
 
-      - name: "Cache Haskell Language Server build artifacts."
-        uses: "actions/cache@v2"
-        with:
-          path: |
-            ./hls/dist-newstyle
-          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/haskell-language-server.cabal') }}
-          restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
+      # - name: "Cache Haskell Language Server build artifacts."
+      #   uses: "actions/cache@v2"
+      #   with:
+      #     path: |
+      #       ./hls/dist-newstyle
+      #     key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/haskell-language-server.cabal') }}
+      #     restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
 
       - name: "Build Haskell Language Server executable."
         run: |

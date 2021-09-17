@@ -79,7 +79,20 @@ jobs:
           key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./hls/haskell-language-server.cabal') }}
           restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
 
-      - name: "Build Haskell Language Server."
+      - name: "Build Haskell Language Server executable."
         run: |
           cd hls
           cabal build exe:hls -O2 # --ghc-options="-dynamic" # XXX: Unclear whether this is necessary
+          cd ../
+
+      - name: "Compress Haskell Language Server executable."
+        id: "compress-hls-executable"
+        run: |
+          HLS_BUILD=$(find ./hls/dist-newstyle \( -name 'hls' \) -type f)
+          HLS=haskell-language-server-${{ matrix.ghc }}
+          cp $HLS_BUILD $HLS
+
+          gzip --best $HLS
+          echo ::set-output name=path::$HLS.gz
+          echo ::set-output name=content_type::application/gzip
+          echo ::set-output name=extension::gz
